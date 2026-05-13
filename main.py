@@ -2,11 +2,19 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+
 import yt_dlp
 import uuid
 import os
+import shutil
 
 app = FastAPI()
+
+# حذف مجلد التحميلات القديم عند تشغيل السيرفر
+if os.path.exists("downloads"):
+    shutil.rmtree("downloads")
+
+os.makedirs("downloads", exist_ok=True)
 
 # CORS
 app.add_middleware(
@@ -18,7 +26,6 @@ app.add_middleware(
 )
 
 DOWNLOAD_DIR = "downloads"
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 class DownloadRequest(BaseModel):
     url: str
@@ -30,17 +37,18 @@ def root():
 @app.post("/api/download")
 def download_video(data: DownloadRequest):
 
-    task_id = str(uuid.uuid4())
-    output_path = f"{DOWNLOAD_DIR}/{task_id}.mp4"
-
-    ydl_opts = {
-        "format": "best",
-        "outtmpl": output_path,
-        "noplaylist": True,
-        "quiet": True
-    }
-
     try:
+        task_id = str(uuid.uuid4())
+
+        output_path = f"{DOWNLOAD_DIR}/{task_id}.mp4"
+
+        ydl_opts = {
+            "format": "mp4",
+            "outtmpl": output_path,
+            "noplaylist": True,
+            "quiet": True
+        }
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([data.url])
 
@@ -58,4 +66,17 @@ def download_video(data: DownloadRequest):
 
 @app.get("/file/{filename}")
 def get_file(filename: str):
-    return FileResponse(f"{DOWNLOAD_DIR}/{filename}")
+
+    file_path = f"{DOWNLOAD_DIR}/{filename}"
+
+    if not os.path.exists(file_path):
+        return {
+            "status": "error",
+            "message": "File not found"
+        }
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/octet-stream"
+    )
